@@ -44,8 +44,8 @@ const chartMarkerPlugin = {
         
         ctx.save();
         ctx.textAlign = 'left';
-        ctx.font = 'bold 14px "Segoe UI", "Malgun Gothic", sans-serif';
-        let textY = chartArea.top + 24;
+        ctx.font = 'bold 16px "Segoe UI", "Malgun Gothic", sans-serif';
+        let textY = chartArea.top + 26;
         
         if (chartMarkers.personal?.label) {
             ctx.fillStyle = chartMarkers.personal.labelColor || '#ff6384';
