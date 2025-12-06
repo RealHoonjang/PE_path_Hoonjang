@@ -37,12 +37,15 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#analysis-result">분석 결과</a>
                     </li>
+                    <!-- 진로 상담 메뉴는 비공개 처리 (추후 재공개 예정) -->
+                    <!--
                     <li class="nav-item">
                         <a class="nav-link" href="#career-section">진로 및 자격증</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#counseling-section">입시 상담</a>
                     </li>
+                    -->
                 </ul>
             </div>
         </div>
@@ -63,8 +66,11 @@
                             </p>
                             <div class="hero-actions d-flex flex-wrap mt-4">
                                 <a href="#event-selector" class="btn btn-primary btn-lg me-3 mb-3 mb-lg-0">실기 기록확인</a>
+                                <!-- 진로 상담 버튼은 비공개 처리 (추후 재공개 예정) -->
+                                <!--
                                 <a href="#career-section" class="btn btn-outline btn-lg me-3 mb-3 mb-lg-0">체육 진로 및 자격증 정보 확인</a>
                                 <a href="#counseling-section" class="btn btn-outline btn-lg">입시 상담 보기</a>
+                                -->
                             </div>
                         </div>
                     </div>
@@ -86,7 +92,7 @@
                         <h3 class="mb-0"><i class="fas fa-list me-2"></i>체육 실기 종목 선택</h3>
                     </div>
                     <div class="card-body">
-                        <div class="row">
+                        <div class="row mb-3">
                             <div class="col-md-5">
                                 <label for="event-select" class="form-label">분석할 종목을 선택하세요</label>
                                 <select class="form-select form-select-lg" id="event-select">
@@ -104,16 +110,23 @@
                             </div>
                             <div class="col-md-3">
                                 <label for="gender-filter" class="form-label">성별 필터</label>
-                <select class="form-select form-select-lg" id="gender-filter">
-                    <option value="전체">전체</option>
-                    <option value="남">남학생</option>
-                    <option value="여">여학생</option>
-                </select>
+                                <select class="form-select form-select-lg" id="gender-filter">
+                                    <option value="전체">전체</option>
+                                    <option value="남">남학생</option>
+                                    <option value="여">여학생</option>
+                                </select>
                             </div>
                             <div class="col-md-4 d-flex align-items-end">
-                                <button class="btn btn-primary btn-lg w-100" id="load-event-data">
-                                    <i class="fas fa-chart-bar me-2"></i>기록 분포 확인
+                                <button class="btn btn-primary btn-lg w-100" id="add-event-btn">
+                                    <i class="fas fa-plus me-2"></i>종목 추가
                                 </button>
+                            </div>
+                        </div>
+                        <!-- 선택된 종목 목록 -->
+                        <div id="selected-events-list" class="mb-3" style="display: none;">
+                            <label class="form-label">선택된 종목 목록</label>
+                            <div id="selected-events-container" class="d-flex flex-wrap gap-2">
+                                <!-- 선택된 종목들이 여기에 표시됩니다 -->
                             </div>
                         </div>
                     </div>
@@ -154,8 +167,8 @@
                         <h3 class="mb-0"><i class="fas fa-edit me-2"></i>개인 기록 입력</h3>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
+                        <div class="row mb-3">
+                            <div class="col-md-12">
                                 <label for="student-gender" class="form-label">성별 선택</label>
                                 <select class="form-select form-select-lg" id="student-gender">
                                     <option value="">성별을 선택하세요</option>
@@ -163,17 +176,14 @@
                                     <option value="여">여</option>
                                 </select>
                             </div>
-                            <div class="col-md-5">
-                                <label for="personal-score" class="form-label">개인 기록 입력</label>
-                                <div class="input-group input-group-lg">
-                                    <input type="number" class="form-control" id="personal-score" 
-                                           step="0.01" placeholder="기록을 입력하세요">
-                                    <span class="input-group-text" id="unit-display">단위</span>
-                                </div>
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <button class="btn btn-primary btn-lg w-100" id="analyze-score">
-                                    <i class="fas fa-search me-2"></i>내 위치 확인
+                        </div>
+                        <div id="multi-event-inputs" class="row">
+                            <!-- 각 종목별 입력 필드가 동적으로 생성됩니다 -->
+                        </div>
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <button class="btn btn-primary btn-lg w-100" id="analyze-all-events-btn" style="display: none;">
+                                    <i class="fas fa-chart-line me-2"></i>모든 종목 분석하기
                                 </button>
                             </div>
                         </div>
@@ -186,8 +196,11 @@
         <div id="analysis-result" class="row mb-5">
             <div class="col-12">
                 <div class="card shadow">
-                    <div class="card-header section-header">
+                    <div class="card-header section-header d-flex align-items-center justify-content-between flex-wrap">
                         <h3 class="mb-0"><i class="fas fa-trophy me-2"></i>분석 결과</h3>
+                        <button id="download-pdf-btn" class="btn btn-success btn-lg" style="display: none;">
+                            <i class="fas fa-file-pdf me-2"></i>PDF 다운로드
+                        </button>
                     </div>
                     <div class="card-body">
                         <div id="result-content" class="text-center text-muted">
@@ -199,8 +212,8 @@
             </div>
         </div>
 
-        <!-- 진로/자격증 정보 섹션 -->
-        <div id="career-section" class="row mb-5">
+        <!-- 진로/자격증 정보 섹션 (비공개 처리 - 추후 재공개 예정) -->
+        <div id="career-section" class="row mb-5" style="display: none;">
             <div class="col-12">
                 <div class="card shadow">
                     <div class="card-header section-header d-flex align-items-center justify-content-between flex-wrap">
@@ -267,8 +280,8 @@
             </div>
         </div>
 
-        <!-- 체육대학 상담 섹션 -->
-        <div id="counseling-section" class="row mb-5">
+        <!-- 체육대학 상담 섹션 (비공개 처리 - 추후 재공개 예정) -->
+        <div id="counseling-section" class="row mb-5" style="display: none;">
             <div class="col-12">
                 <div class="card shadow">
                     <div class="card-header section-header">
@@ -301,6 +314,7 @@
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

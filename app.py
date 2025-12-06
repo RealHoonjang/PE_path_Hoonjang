@@ -129,7 +129,8 @@ REGION_NAMES = {
     'chungnam': '충남',
     'chungbuk': '충북',
     'deajeon': '대전',
-    'kwangju': '광주'
+    'kwangju': '광주',
+    'sejong': '세종'
 }
 
 def process_region_data(data, region):
@@ -165,7 +166,7 @@ def process_region_data(data, region):
 def load_all_sports_data():
     """모든 지역의 체육 실기 데이터 로드"""
     all_data = {}
-    regions = ['seoul', 'inchoen', 'jeju', 'chungnam', 'chungbuk', 'deajeon', 'kwangju']
+    regions = ['seoul', 'inchoen', 'jeju', 'chungnam', 'chungbuk', 'deajeon', 'kwangju', 'sejong']
     
     for region in regions:
         file_path = DATA_DIR / f"{region}.json"

@@ -9,6 +9,15 @@ let chartMarkers = {
 };
 let chartMarkerPluginRegistered = false;
 
+// 학생 기록 저장 (여러 종목)
+let studentRecords = {
+    gender: '',
+    records: {} // { eventKey: { score, percentile, statistics, date } }
+};
+
+// 선택된 종목 목록 관리
+let selectedEvents = []; // [{ eventKey, eventName, unit }]
+
 const chartMarkerPlugin = {
     id: 'chartMarkerPlugin',
     afterDatasetsDraw(chart) {
@@ -120,6 +129,17 @@ const eventMapping = {
         'grip_strength': '배근력 기록',
         'front_bend': '좌전굴 기록',
         'medicine_ball_throw': '메디신볼던지기 기록'
+    },
+    'sejong': {
+        'standing_long_jump': '제자리멀리뛰기',
+        'vertical_jump': '서전트점프',
+        'grip_strength': '배근력',
+        'sit_up': '윗몸일으키기',
+        'front_bend': '앉아윗몸앞으로굽히기',
+        '10m_dash': '10m 달리기',
+        '20m_dash': '20m 달리기',
+        'long_run': '오래달리기',
+        'medicine_ball_throw': '메디신볼던지기'
     }
 };
 
@@ -349,14 +369,45 @@ document.addEventListener('DOMContentLoaded', async function() {
 function initializeApp() {
     console.log('체육 실기 분석 시스템 초기화');
     updateStatus('데이터를 로드하는 중입니다...', 'info');
+    
+    // 저장된 학생 기록 불러오기
+    studentRecords = loadStudentRecords();
+    
+    // 기록이 있으면 PDF 다운로드 버튼 표시
+    if (studentRecords.records && Object.keys(studentRecords.records).length > 0) {
+        const pdfBtn = document.getElementById('download-pdf-btn');
+        if (pdfBtn) {
+            pdfBtn.style.display = 'block';
+        }
+    }
 }
 
 // 이벤트 리스너 설정
 function setupEventListeners() {
     document.getElementById('event-select').addEventListener('change', handleEventSelection);
-    document.getElementById('load-event-data').addEventListener('click', loadEventData);
-    document.getElementById('analyze-score').addEventListener('click', analyzePersonalScore);
-    document.getElementById('personal-score').addEventListener('input', validateScoreInput);
+    document.getElementById('add-event-btn').addEventListener('click', addSelectedEvent);
+    document.getElementById('analyze-all-events-btn').addEventListener('click', analyzeAllSelectedEvents);
+    
+    // 성별 선택 시 입력 필드 업데이트 및 분석 버튼 표시
+    const genderSelect = document.getElementById('student-gender');
+    if (genderSelect) {
+        genderSelect.addEventListener('change', function() {
+            updateMultiEventInputs();
+            // 성별이 선택되고 종목이 있으면 분석 버튼 표시
+            const analyzeBtn = document.getElementById('analyze-all-events-btn');
+            if (analyzeBtn && this.value && selectedEvents.length > 0) {
+                analyzeBtn.style.display = 'block';
+            } else if (analyzeBtn) {
+                analyzeBtn.style.display = 'none';
+            }
+        });
+    }
+    
+    // PDF 다운로드 버튼 이벤트 리스너
+    const pdfBtn = document.getElementById('download-pdf-btn');
+    if (pdfBtn) {
+        pdfBtn.addEventListener('click', downloadPDFReport);
+    }
 }
 
 // 모든 JSON 파일 로드
@@ -368,7 +419,8 @@ function loadAllDataFiles() {
         'data/chungnam.json',
         'data/chungbuk.json',
         'data/deajeon.json',
-        'data/kwangju.json'
+        'data/kwangju.json',
+        'data/sejong.json'
     ];
 
     let loadedCount = 0;
@@ -494,6 +546,379 @@ function handleEventSelection() {
             <p>종목을 선택하고 기록을 입력한 후 '위치 분석' 버튼을 클릭하세요.</p>
         `;
     }
+}
+
+// 선택된 종목 추가
+function addSelectedEvent() {
+    const eventSelect = document.getElementById('event-select');
+    const eventKey = eventSelect.value;
+    
+    if (!eventKey) {
+        updateStatus('종목을 선택해주세요.', 'warning');
+        return;
+    }
+    
+    // 이미 추가된 종목인지 확인
+    if (selectedEvents.some(e => e.eventKey === eventKey)) {
+        updateStatus('이미 추가된 종목입니다.', 'warning');
+        return;
+    }
+    
+    // 종목 추가
+    const eventName = eventDisplayNames[eventKey] || eventKey;
+    const unit = unitMap[eventKey] || '';
+    
+    selectedEvents.push({
+        eventKey: eventKey,
+        eventName: eventName,
+        unit: unit
+    });
+    
+    // UI 업데이트
+    updateSelectedEventsList();
+    updateMultiEventInputs();
+    
+    // 성별이 선택되어 있으면 분석 버튼 표시
+    const gender = document.getElementById('student-gender').value;
+    if (gender && selectedEvents.length > 0) {
+        document.getElementById('analyze-all-events-btn').style.display = 'block';
+    }
+    
+    // 선택 박스 초기화
+    eventSelect.value = '';
+    updateStatus(`${eventName} 종목이 추가되었습니다.`, 'success');
+}
+
+// 선택된 종목 목록 UI 업데이트
+function updateSelectedEventsList() {
+    const container = document.getElementById('selected-events-container');
+    const listDiv = document.getElementById('selected-events-list');
+    
+    if (!container || !listDiv) return;
+    
+    if (selectedEvents.length === 0) {
+        listDiv.style.display = 'none';
+        return;
+    }
+    
+    listDiv.style.display = 'block';
+    container.innerHTML = '';
+    
+    selectedEvents.forEach((event, index) => {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-primary p-2 d-flex align-items-center';
+        badge.style.fontSize = '0.95rem';
+        badge.innerHTML = `
+            ${event.eventName}
+            <button type="button" class="btn-close btn-close-white ms-2" aria-label="Remove" 
+                    onclick="removeSelectedEvent(${index})" style="font-size: 0.7rem;"></button>
+        `;
+        container.appendChild(badge);
+    });
+}
+
+// 선택된 종목 제거 (전역 함수로 등록)
+window.removeSelectedEvent = function(index) {
+    if (index >= 0 && index < selectedEvents.length) {
+        const removedEvent = selectedEvents[index];
+        selectedEvents.splice(index, 1);
+        
+        updateSelectedEventsList();
+        updateMultiEventInputs();
+        
+        // 기록 입력 필드에서도 제거
+        const inputContainer = document.getElementById('multi-event-inputs');
+        const inputRow = inputContainer.querySelector(`[data-event-key="${removedEvent.eventKey}"]`);
+        if (inputRow) {
+            inputRow.remove();
+        }
+        
+        // 분석 버튼 표시 여부 업데이트
+        if (selectedEvents.length === 0) {
+            document.getElementById('analyze-all-events-btn').style.display = 'none';
+        }
+        
+        updateStatus(`${removedEvent.eventName} 종목이 제거되었습니다.`, 'info');
+    }
+};
+
+// 여러 종목 입력 필드 업데이트
+function updateMultiEventInputs() {
+    const container = document.getElementById('multi-event-inputs');
+    if (!container) return;
+    
+    const gender = document.getElementById('student-gender').value;
+    const analyzeBtn = document.getElementById('analyze-all-events-btn');
+    
+    if (!gender || selectedEvents.length === 0) {
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    ${!gender ? '성별을 선택하고 종목을 추가해주세요.' : '종목을 추가해주세요.'}
+                </div>
+            </div>
+        `;
+        if (analyzeBtn) {
+            analyzeBtn.style.display = 'none';
+        }
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    selectedEvents.forEach(event => {
+        const colDiv = document.createElement('div');
+        colDiv.className = 'col-md-6 col-lg-4 mb-3';
+        colDiv.setAttribute('data-event-key', event.eventKey);
+        
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.textContent = `${event.eventName} (${event.unit})`;
+        label.setAttribute('for', `score-${event.eventKey}`);
+        
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group input-group-lg';
+        
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'form-control event-score-input';
+        input.id = `score-${event.eventKey}`;
+        input.dataset.eventKey = event.eventKey;
+        input.step = event.unit === '회' ? '1' : '0.01';
+        input.placeholder = `${event.eventName} 기록 입력`;
+        input.min = '0';
+        
+        // 저장된 값이 있으면 불러오기
+        if (studentRecords.records && studentRecords.records[event.eventKey]) {
+            input.value = studentRecords.records[event.eventKey].score;
+        }
+        
+        const unitSpan = document.createElement('span');
+        unitSpan.className = 'input-group-text';
+        unitSpan.textContent = event.unit;
+        
+        inputGroup.appendChild(input);
+        inputGroup.appendChild(unitSpan);
+        
+        colDiv.appendChild(label);
+        colDiv.appendChild(inputGroup);
+        container.appendChild(colDiv);
+    });
+    
+    // 분석 버튼 표시
+    if (analyzeBtn && gender && selectedEvents.length > 0) {
+        analyzeBtn.style.display = 'block';
+    }
+}
+
+// 모든 선택된 종목 분석
+function analyzeAllSelectedEvents() {
+    if (selectedEvents.length === 0) {
+        updateStatus('분석할 종목을 추가해주세요.', 'warning');
+        return;
+    }
+    
+    const gender = document.getElementById('student-gender').value;
+    if (!gender) {
+        updateStatus('성별을 선택해주세요.', 'warning');
+        return;
+    }
+    
+    // 모든 입력값 수집
+    const inputs = document.querySelectorAll('.event-score-input');
+    const scores = {};
+    let hasValidScore = false;
+    
+    inputs.forEach(input => {
+        const eventKey = input.dataset.eventKey;
+        const score = parseFloat(input.value);
+        
+        if (!isNaN(score) && score > 0) {
+            scores[eventKey] = score;
+            hasValidScore = true;
+        }
+    });
+    
+    if (!hasValidScore) {
+        updateStatus('최소 하나 이상의 기록을 입력해주세요.', 'warning');
+        return;
+    }
+    
+    // 로딩 표시
+    const resultContent = document.getElementById('result-content');
+    resultContent.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">로딩 중...</span>
+            </div>
+            <p class="mt-3">여러 종목을 분석하고 있습니다...</p>
+        </div>
+    `;
+    
+    // 모든 종목 분석
+    setTimeout(() => {
+        const analysisResults = [];
+        
+        selectedEvents.forEach(event => {
+            const score = scores[event.eventKey];
+            if (score && !isNaN(score)) {
+                const percentile = calculateScorePercentile(event.eventKey, score, gender);
+                if (percentile !== null) {
+                    const stats = getEventStatistics(event.eventKey, gender);
+                    analysisResults.push({
+                        eventKey: event.eventKey,
+                        eventName: event.eventName,
+                        unit: event.unit,
+                        score: score,
+                        percentile: percentile,
+                        statistics: stats
+                    });
+                    
+                    // 기록 저장
+                    saveStudentRecord(event.eventKey, score, gender, percentile, stats);
+                }
+            }
+        });
+        
+        // 결과 표시
+        displayMultiEventResults(analysisResults, gender);
+        
+        // PDF 다운로드 버튼 표시
+        const pdfBtn = document.getElementById('download-pdf-btn');
+        if (pdfBtn) {
+            pdfBtn.style.display = 'block';
+        }
+        
+        // 분석 결과 섹션으로 스크롤
+        document.getElementById('analysis-result').scrollIntoView({ 
+            behavior: 'smooth' 
+        });
+        
+        updateStatus(`${analysisResults.length}개 종목 분석이 완료되었습니다.`, 'success');
+    }, 300);
+}
+
+// 여러 종목 분석 결과 표시
+function displayMultiEventResults(results, gender) {
+    const container = document.getElementById('result-content');
+    if (!container || results.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                분석 결과가 없습니다.
+            </div>
+        `;
+        return;
+    }
+    
+    const genderText = gender === '남' ? '남학생' : '여학생';
+    
+    let html = `
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4><i class="fas fa-chart-bar me-2"></i>종합 분석 결과</h4>
+                <p class="text-muted">성별: ${genderText} | 분석 종목 수: ${results.length}개</p>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered">
+                <thead class="table-primary">
+                    <tr>
+                        <th style="width: 5%;">번호</th>
+                        <th style="width: 20%;">종목명</th>
+                        <th style="width: 15%;">기록</th>
+                        <th style="width: 12%;">상위%</th>
+                        <th style="width: 12%;">등급</th>
+                        <th style="width: 12%;">평균</th>
+                        <th style="width: 12%;">최솟값</th>
+                        <th style="width: 12%;">최댓값</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    results.forEach((result, index) => {
+        const upperPercent = 100 - Math.round(result.percentile);
+        const grade = getGradeFromPercentile(Math.round(result.percentile));
+        const gradeClass = grade.class.replace('percentile-', 'grade-');
+        
+        html += `
+            <tr>
+                <td class="text-center">${index + 1}</td>
+                <td><strong>${result.eventName}</strong></td>
+                <td class="text-center">${result.score} ${result.unit}</td>
+                <td class="text-center"><strong>${upperPercent}%</strong></td>
+                <td class="text-center ${gradeClass}"><strong>${grade.text}</strong></td>
+                <td class="text-center">${result.statistics ? result.statistics.mean.toFixed(2) : '-'} ${result.unit}</td>
+                <td class="text-center">${result.statistics ? result.statistics.min.toFixed(2) : '-'} ${result.unit}</td>
+                <td class="text-center">${result.statistics ? result.statistics.max.toFixed(2) : '-'} ${result.unit}</td>
+            </tr>
+        `;
+    });
+    
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    // 요약 정보
+    let totalPercent = 0;
+    let excellentCount = 0, goodCount = 0, averageCount = 0, poorCount = 0;
+    
+    results.forEach(result => {
+        const upperPercent = 100 - Math.round(result.percentile);
+        totalPercent += upperPercent;
+        
+        const grade = getGradeFromPercentile(Math.round(result.percentile));
+        if (grade.text === '우수') excellentCount++;
+        else if (grade.text === '양호') goodCount++;
+        else if (grade.text === '보통') averageCount++;
+        else poorCount++;
+    });
+    
+    const avgPercent = (totalPercent / results.length).toFixed(1);
+    
+    html += `
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-info-circle me-2"></i>요약 정보</h5>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="stat-item">
+                                    <div class="stat-value text-primary">${avgPercent}%</div>
+                                    <div class="stat-label">평균 상위 백분율</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-item">
+                                    <div class="stat-value text-success">${excellentCount}개</div>
+                                    <div class="stat-label">우수 등급</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-item">
+                                    <div class="stat-value text-info">${goodCount}개</div>
+                                    <div class="stat-label">양호 등급</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-item">
+                                    <div class="stat-value text-warning">${averageCount + poorCount}개</div>
+                                    <div class="stat-label">개선 필요</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = html;
 }
 
 // 단위 표시 업데이트
@@ -1750,12 +2175,17 @@ function analyzePersonalScore() {
         }
         
         const stats = getEventStatistics(currentEvent, gender);
-        displayAnalysisResult({
+        const analysisData = {
             score: score,
             percentile: percentile,
             statistics: stats,
             gender: gender
-        });
+        };
+        
+        displayAnalysisResult(analysisData);
+        
+        // 학생 기록 저장
+        saveStudentRecord(currentEvent, score, gender, percentile, stats);
         
         // 히스토그램에 개인 위치 표시
         displayPersonalPositionOnChart(score, gender);
@@ -1765,6 +2195,12 @@ function analyzePersonalScore() {
         });
         
         updateStatus('분석이 완료되었습니다.', 'success');
+        
+        // PDF 다운로드 버튼 표시
+        const pdfBtn = document.getElementById('download-pdf-btn');
+        if (pdfBtn) {
+            pdfBtn.style.display = 'block';
+        }
     }, 300);
 }
 
@@ -1995,4 +2431,337 @@ function updateStatus(message, type = 'info') {
     alert.innerHTML = `
         <i class="fas fa-info-circle me-2"></i>${message}
     `;
+}
+
+// 학생 기록 저장
+function saveStudentRecord(eventKey, score, gender, percentile, statistics) {
+    // localStorage에서 기존 기록 불러오기
+    const saved = localStorage.getItem('student_records');
+    if (saved) {
+        try {
+            studentRecords = JSON.parse(saved);
+        } catch (e) {
+            console.error('기록 불러오기 실패:', e);
+            studentRecords = { gender: '', records: {} };
+        }
+    }
+    
+    // 성별 저장
+    studentRecords.gender = gender;
+    
+    // 현재 종목 기록 저장
+    studentRecords.records[eventKey] = {
+        score: score,
+        percentile: percentile,
+        statistics: statistics,
+        date: new Date().toISOString(),
+        eventName: eventDisplayNames[eventKey] || eventKey,
+        unit: unitMap[eventKey] || ''
+    };
+    
+    // localStorage에 저장
+    localStorage.setItem('student_records', JSON.stringify(studentRecords));
+    
+    console.log('학생 기록 저장 완료:', studentRecords);
+}
+
+// 저장된 학생 기록 불러오기
+function loadStudentRecords() {
+    const saved = localStorage.getItem('student_records');
+    if (saved) {
+        try {
+            studentRecords = JSON.parse(saved);
+            return studentRecords;
+        } catch (e) {
+            console.error('기록 불러오기 실패:', e);
+            return { gender: '', records: {} };
+        }
+    }
+    return { gender: '', records: {} };
+}
+
+// PDF 리포트 다운로드 (A4 한 페이지 최적화)
+function downloadPDFReport() {
+    if (typeof window.jspdf === 'undefined') {
+        alert('PDF 라이브러리를 불러올 수 없습니다. 페이지를 새로고침해주세요.');
+        return;
+    }
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // 저장된 기록 불러오기
+    const records = loadStudentRecords();
+    
+    if (!records.records || Object.keys(records.records).length === 0) {
+        alert('저장된 기록이 없습니다. 먼저 기록을 입력하고 분석해주세요.');
+        return;
+    }
+    
+    const margin = 10;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    let yPos = 12;
+    
+    // PDF 제목 및 헤더 (컴팩트하게)
+    doc.setFontSize(16);
+    doc.setTextColor(59, 111, 245);
+    doc.setFont(undefined, 'bold');
+    doc.text('체육 실기 기록 분석 리포트', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont(undefined, 'normal');
+    doc.text(`생성일: ${new Date().toLocaleDateString('ko-KR')} | 성별: ${records.gender || '미입력'} | 종목 수: ${Object.keys(records.records).length}개`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    // 구분선
+    doc.setDrawColor(59, 111, 245);
+    doc.setLineWidth(0.3);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 6;
+    
+    // 종목별 기록을 표 형식으로 정리 (A4 한 페이지에 맞게 최적화)
+    const eventKeys = Object.keys(records.records);
+    const tableStartY = yPos;
+    const availableHeight = pageHeight - yPos - 35; // 하단 여백 고려
+    const maxRows = Math.floor(availableHeight / 6.5); // 행 높이 고려
+    
+    // 종목이 많으면 폰트 크기 조정
+    const isCompact = eventKeys.length > 8;
+    const colWidths = isCompact ? {
+        no: 8,
+        event: 42,
+        score: 22,
+        percentile: 18,
+        grade: 18,
+        average: 22,
+        min: 20,
+        max: 20,
+        count: 20
+    } : {
+        no: 10,
+        event: 48,
+        score: 26,
+        percentile: 20,
+        grade: 20,
+        average: 26,
+        min: 24,
+        max: 24,
+        count: 26
+    };
+    
+    const tableStartX = margin;
+    const rowHeight = isCompact ? 6 : 7;
+    const headerHeight = isCompact ? 8 : 9;
+    
+    // 표 헤더 배경색
+    doc.setFillColor(59, 111, 245);
+    doc.rect(tableStartX, tableStartY, pageWidth - margin * 2, headerHeight, 'F');
+    
+    // 표 헤더 텍스트
+    doc.setFontSize(isCompact ? 8 : 9);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    
+    let xPos = tableStartX + 1;
+    doc.text('번호', xPos + colWidths.no / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.no;
+    
+    doc.text('종목명', xPos + colWidths.event / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.event;
+    
+    doc.text('기록', xPos + colWidths.score / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.score;
+    
+    doc.text('상위%', xPos + colWidths.percentile / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.percentile;
+    
+    doc.text('등급', xPos + colWidths.grade / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.grade;
+    
+    doc.text('평균', xPos + colWidths.average / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    xPos += colWidths.average;
+    
+    if (!isCompact) {
+        doc.text('최소', xPos + colWidths.min / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.min;
+        
+        doc.text('최대', xPos + colWidths.max / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.max;
+    }
+    
+    doc.text('데이터', xPos + colWidths.count / 2, tableStartY + headerHeight / 2 + 1.5, { align: 'center' });
+    
+    yPos = tableStartY + headerHeight;
+    
+    // 표 데이터
+    doc.setFontSize(isCompact ? 7.5 : 8);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'normal');
+    
+    eventKeys.forEach((eventKey, index) => {
+        const record = records.records[eventKey];
+        const upperPercent = 100 - Math.round(record.percentile);
+        const grade = getGradeFromPercentile(Math.round(record.percentile));
+        
+        // 행 배경색 (짝수 행은 연한 회색)
+        if (index % 2 === 0) {
+            doc.setFillColor(245, 245, 245);
+            doc.rect(tableStartX, yPos, pageWidth - margin * 2, rowHeight, 'F');
+        }
+        
+        // 행 구분선
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.1);
+        doc.line(tableStartX, yPos, pageWidth - margin, yPos);
+        
+        xPos = tableStartX + 1;
+        
+        // 번호
+        doc.text(String(index + 1), xPos + colWidths.no / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.no;
+        
+        // 종목명 (긴 이름은 줄임)
+        let eventName = record.eventName;
+        if (eventName.length > 8 && isCompact) {
+            eventName = eventName.substring(0, 7) + '...';
+        }
+        doc.text(eventName, xPos + 1, yPos + rowHeight / 2 + 1.5);
+        xPos += colWidths.event;
+        
+        // 기록
+        const scoreText = isCompact ? `${record.score}` : `${record.score} ${record.unit}`;
+        doc.text(scoreText, xPos + colWidths.score / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.score;
+        
+        // 상위%
+        doc.text(`${upperPercent}%`, xPos + colWidths.percentile / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.percentile;
+        
+        // 등급
+        doc.text(grade.text, xPos + colWidths.grade / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+        xPos += colWidths.grade;
+        
+        // 평균
+        if (record.statistics) {
+            doc.text(`${record.statistics.mean.toFixed(isCompact ? 1 : 2)}`, xPos + colWidths.average / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+            xPos += colWidths.average;
+            
+            if (!isCompact) {
+                // 최소값
+                doc.text(`${record.statistics.min.toFixed(1)}`, xPos + colWidths.min / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+                xPos += colWidths.min;
+                
+                // 최대값
+                doc.text(`${record.statistics.max.toFixed(1)}`, xPos + colWidths.max / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+                xPos += colWidths.max;
+            }
+            
+            // 데이터 수
+            doc.text(`${record.statistics.count}`, xPos + colWidths.count / 2, yPos + rowHeight / 2 + 1.5, { align: 'center' });
+        } else {
+            xPos += colWidths.average + (isCompact ? 0 : colWidths.min + colWidths.max) + colWidths.count;
+        }
+        
+        yPos += rowHeight;
+        
+        // 한 페이지를 넘지 않도록 체크
+        if (yPos > pageHeight - 30) {
+            doc.addPage();
+            yPos = 20;
+            
+            // 새 페이지에 헤더 다시 그리기
+            doc.setFillColor(59, 111, 245);
+            doc.rect(tableStartX, yPos, pageWidth - margin * 2, headerHeight, 'F');
+            
+            doc.setFontSize(10);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont(undefined, 'bold');
+            
+            xPos = tableStartX + 2;
+            doc.text('번호', xPos + colWidths.no / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.no;
+            doc.text('종목명', xPos + colWidths.event / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.event;
+            doc.text('기록', xPos + colWidths.score / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.score;
+            doc.text('상위%', xPos + colWidths.percentile / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.percentile;
+            doc.text('등급', xPos + colWidths.grade / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.grade;
+            doc.text('평균', xPos + colWidths.average / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            xPos += colWidths.average;
+            doc.text('데이터수', xPos + colWidths.count / 2, yPos + headerHeight / 2 + 2, { align: 'center' });
+            
+            yPos += headerHeight;
+            
+            doc.setFontSize(9);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont(undefined, 'normal');
+        }
+    });
+    
+    // 표 하단 구분선
+    doc.setDrawColor(59, 111, 245);
+    doc.setLineWidth(0.3);
+    doc.line(tableStartX, yPos, pageWidth - margin, yPos);
+    yPos += 5;
+    
+    // 요약 정보 (컴팩트하게)
+    if (yPos > pageHeight - 25) {
+        yPos = pageHeight - 25; // 공간이 부족하면 위치 조정
+    }
+    
+    doc.setFontSize(isCompact ? 9 : 10);
+    doc.setTextColor(59, 111, 245);
+    doc.setFont(undefined, 'bold');
+    doc.text('요약', margin, yPos);
+    yPos += 5;
+    
+    doc.setFontSize(isCompact ? 7.5 : 8);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'normal');
+    
+    // 평균 상위% 계산
+    let totalPercent = 0;
+    let excellentCount = 0;
+    let goodCount = 0;
+    let averageCount = 0;
+    let poorCount = 0;
+    
+    eventKeys.forEach(eventKey => {
+        const record = records.records[eventKey];
+        const upperPercent = 100 - Math.round(record.percentile);
+        totalPercent += upperPercent;
+        
+        const grade = getGradeFromPercentile(Math.round(record.percentile));
+        if (grade.text === '우수') excellentCount++;
+        else if (grade.text === '양호') goodCount++;
+        else if (grade.text === '보통') averageCount++;
+        else poorCount++;
+    });
+    
+    const avgPercent = (totalPercent / eventKeys.length).toFixed(1);
+    
+    // 요약 정보를 한 줄에 표시 (공간 절약)
+    const summaryText = `평균 상위 ${avgPercent}% | 우수:${excellentCount} 양호:${goodCount} 보통:${averageCount} 개선:${poorCount}`;
+    doc.text(summaryText, margin + 2, yPos);
+    
+    // 푸터
+    doc.setFontSize(7);
+    doc.setTextColor(128, 128, 128);
+    doc.text(
+        `체육 진로 진학 프로그램 - ${new Date().toLocaleDateString('ko-KR')}`,
+        pageWidth / 2,
+        pageHeight - 5,
+        { align: 'center' }
+    );
+    
+    // PDF 다운로드
+    const fileName = `체육실기기록_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+    
+    updateStatus('PDF 리포트가 다운로드되었습니다.', 'success');
 }
